@@ -2,12 +2,16 @@
   <li class="task-item" :class="{ 'completed': task.completed }">
     <div class="task-content">
       <div class="checkbox-container">
-        <input 
-          type="checkbox" 
-          :checked="task.completed" 
-          @change="$emit('toggle', task)"
-          class="task-checkbox"
-        />
+        <label class="modern-checkbox" :class="{ 'toggling': isToggling }">
+          <input 
+            type="checkbox" 
+            :checked="task.completed" 
+            @change="handleToggle"
+            class="task-checkbox"
+            :disabled="isToggling"
+          />
+          <span class="checkmark"></span>
+        </label>
       </div>
       
       <!-- Display mode -->
@@ -22,17 +26,18 @@
       <!-- Edit mode -->
       <div v-else class="edit-mode">
         <div class="edit-input-wrapper">
-          <input 
-            v-model="editTitle" 
+          <ValidatedInput
+            v-model="editTitle"
+            name="editTaskTitle"
+            :rules="editTaskTitleRules"
+            placeholder="Edit task title..."
             @keyup.enter="saveEdit"
             @keyup.esc="cancelEdit"
             @blur="saveEdit"
             ref="editInput"
             class="edit-input"
-            :class="{ 'error': hasValidationError }"
-            type="text"
+            :showSuccessMessage="false"
           />
-          <div v-if="hasValidationError" class="edit-error-indicator">⚠️</div>
         </div>
         <div class="edit-buttons">
           <button @click="saveEdit" class="save-btn" title="Save">
@@ -52,7 +57,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, computed } from 'vue'
+import ValidatedInput from './ValidatedInput.vue'
+import { taskTitleRules } from '../utils/validationSchemas'
 
 const props = defineProps<{
   task: { id: number; title: string; completed: boolean }
@@ -63,35 +70,74 @@ const emit = defineEmits(["delete", "toggle", "update"])
 const isEditing = ref(false)
 const editTitle = ref("")
 const editInput = ref<HTMLInputElement>()
-const hasValidationError = ref(false)
+const isToggling = ref(false)
+
+// Memoize the task to prevent unnecessary re-renders
+const task = computed(() => props.task)
+
+// Validation rules for editing (excluding current task from duplicate check)
+const editTaskTitleRules = {
+  ...taskTitleRules,
+  unique: async (value: string) => {
+    if (!value) return true
+    // Import the store here to avoid circular dependency
+    const { useTaskStore } = await import('../stores/taskStore')
+    const taskStore = useTaskStore()
+    const normalizedTitle = value.trim().toLowerCase()
+    const isDuplicate = taskStore.tasks.some(taskItem => 
+      taskItem.title.toLowerCase() === normalizedTitle && 
+      taskItem.id !== task.value.id
+    )
+    return !isDuplicate || 'A task with this title already exists'
+  }
+}
 
 const startEdit = () => {
-  editTitle.value = props.task.title
+  editTitle.value = task.value.title
   isEditing.value = true
-  hasValidationError.value = false
   nextTick(() => {
     editInput.value?.focus()
     editInput.value?.select()
   })
 }
 
-const saveEdit = () => {
-  if (editTitle.value.trim() && editTitle.value !== props.task.title) {
-    const result = emit('update', { id: props.task.id, title: editTitle.value.trim() })
-    // If the update fails due to validation, show error state
+const saveEdit = async () => {
+  if (editTitle.value.trim() && editTitle.value !== task.value.title) {
+    // Import the store here to avoid circular dependency
+    const { useTaskStore } = await import('../stores/taskStore')
+    const taskStore = useTaskStore()
+    const result = await taskStore.updateTask({ id: task.value.id, title: editTitle.value.trim() })
+    // If the update fails due to validation, don't exit edit mode
     if (result === null) {
-      hasValidationError.value = true
       return
     }
   }
   isEditing.value = false
-  hasValidationError.value = false
 }
 
 const cancelEdit = () => {
-  editTitle.value = props.task.title
+  editTitle.value = task.value.title
   isEditing.value = false
-  hasValidationError.value = false
+}
+
+const handleToggle = async () => {
+  if (isToggling.value) return
+  
+  isToggling.value = true
+  try {
+    // Import the store here to avoid circular dependency
+    const { useTaskStore } = await import('../stores/taskStore')
+    const taskStore = useTaskStore()
+    const result = await taskStore.toggleTask(task.value)
+    if (result === null) {
+      // If toggle failed, revert the checkbox state
+      // The checkbox will revert automatically on next render
+    }
+  } catch (error) {
+    console.error('Error toggling task:', error)
+  } finally {
+    isToggling.value = false
+  }
 }
 </script>
 
@@ -136,19 +182,102 @@ const cancelEdit = () => {
   flex-shrink: 0;
 }
 
-.task-checkbox {
-  width: 20px;
-  height: 20px;
-  border: 2px solid #d1d5db;
-  border-radius: 6px;
+.modern-checkbox {
+  position: relative;
+  display: inline-block;
   cursor: pointer;
-  transition: all 0.2s ease;
-  accent-color: #667eea;
+  user-select: none;
 }
 
-.task-checkbox:checked {
+.task-checkbox {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+
+.checkmark {
+  height: 22px;
+  width: 22px;
+  background-color: white;
+  border: 2px solid #d1d5db;
+  border-radius: 6px;
+  position: relative;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modern-checkbox:hover .checkmark {
   border-color: #667eea;
+  transform: scale(1.05);
+}
+
+.modern-checkbox.toggling .checkmark {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.modern-checkbox.toggling .checkmark:after {
+  animation: checkmark-pulse 1s infinite;
+}
+
+@keyframes checkmark-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.task-checkbox:checked ~ .checkmark {
   background-color: #667eea;
+  border-color: #667eea;
+  animation: checkmark-pop 0.2s ease;
+}
+
+.checkmark:after {
+  content: "";
+  position: absolute;
+  display: none;
+  left: 7px;
+  top: 3px;
+  width: 6px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.task-checkbox:checked ~ .checkmark:after {
+  display: block;
+  animation: checkmark-draw 0.2s ease;
+}
+
+@keyframes checkmark-pop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes checkmark-draw {
+  0% {
+    opacity: 0;
+    transform: rotate(45deg) scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(45deg) scale(1);
+  }
 }
 
 .task-title {
@@ -178,41 +307,6 @@ const cancelEdit = () => {
 .edit-input-wrapper {
   flex: 1;
   position: relative;
-}
-
-.edit-input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 2px solid #667eea;
-  border-radius: 8px;
-  font-size: 1rem;
-  background: white;
-  color: #374151;
-  transition: all 0.2s ease;
-}
-
-.edit-input:focus {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.edit-input.error {
-  border-color: #ef4444;
-  background: #fef2f2;
-}
-
-.edit-input.error:focus {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
-}
-
-.edit-error-indicator {
-  position: absolute;
-  top: 50%;
-  right: 10px;
-  transform: translateY(-50%);
-  color: #ef4444;
-  font-size: 14px;
 }
 
 .edit-buttons {

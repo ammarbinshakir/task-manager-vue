@@ -8,7 +8,5 @@
   "scripts": {
     "dev:backend": "node backend/index.js",
     "dev:frontend": "cd frontend && npm run dev"
-  },
-  "devDependencies": {},
-  "dependencies": {}
+  }
 }

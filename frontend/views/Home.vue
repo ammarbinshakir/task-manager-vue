@@ -7,76 +7,73 @@
 
     <main class="main-content">
       <!-- Error Display -->
-      <div v-if="error" class="error-message">
-        <span>⚠️ {{ error }}</span>
-        <button @click="fetchTasks" class="retry-btn">Retry</button>
-      </div>
-
-      <!-- Validation Errors Display -->
-      <div v-if="hasValidationErrors" class="validation-errors">
-        <div v-for="validationError in validationErrors" :key="validationError.field" class="validation-error">
-          <span>⚠️ {{ validationError.message }}</span>
-        </div>
+      <div v-if="taskStore.error" class="error-message">
+        <span>⚠️ {{ taskStore.error }}</span>
+        <button @click="taskStore.fetchTasks" class="retry-btn">Retry</button>
       </div>
 
       <div class="input-section">
-        <div class="add-task-container">
-          <div class="input-wrapper">
-            <input 
-              v-model="newTask" 
-              placeholder="What needs to be done?" 
-              @keyup.enter="handleAddTask"
-              class="add-task-input"
-              :class="{ 'error': hasValidationErrors }"
-              :disabled="isLoading"
-            />
-            <div v-if="hasValidationErrors" class="input-error-indicator">⚠️</div>
+        <form @submit.prevent="handleAddTask" class="add-task-form">
+          <div class="add-task-container">
+            <div class="input-wrapper">
+              <input
+                v-model="newTask"
+                placeholder="What needs to be done?"
+                class="add-task-input"
+                :disabled="taskStore.isLoading"
+                @keyup.enter="handleAddTask"
+              />
+            </div>
+            <button 
+              type="submit" 
+              class="add-task-btn" 
+              :disabled="!isFormValid || taskStore.isLoading"
+            >
+              ➕ Add Task
+            </button>
           </div>
-          <button @click="handleAddTask" class="add-task-btn" :disabled="!newTask.trim() || isLoading">
-            ➕ Add Task
-          </button>
-        </div>
+        </form>
         
         <div class="filter-container">
-          <input 
-            v-model="filterText" 
-            placeholder="🔍 Filter tasks..." 
-            @input="(e) => setFilterText((e.target as HTMLInputElement).value)"
+          <input
+            v-model="taskStore.filterText"
+            placeholder="🔍 Filter tasks..."
             class="filter-input"
-            :disabled="isLoading"
+            @input="(e: Event) => taskStore.setFilterText((e.target as HTMLInputElement).value)"
+            :disabled="taskStore.isLoading"
           />
         </div>
       </div>
 
       <!-- Loading State -->
-      <div v-if="isLoading" class="loading-state">
+      <div v-if="taskStore.isLoading" class="loading-state">
         <div class="loading-spinner"></div>
         <p>Loading tasks...</p>
       </div>
 
       <div v-else class="tasks-section">
-        <div v-if="filteredTasks.length === 0" class="empty-state">
+        <div v-if="taskStore.filteredTasks.length === 0" class="empty-state">
           <div class="empty-icon">📋</div>
-          <p v-if="filterText">{{ `No tasks match "${filterText}"` }}</p>
+          <p v-if="taskStore.filterText">{{ `No tasks match "${taskStore.filterText}"` }}</p>
           <p v-else>No tasks yet. Add your first task above!</p>
         </div>
         
         <ul v-else class="tasks-list">
           <TaskItem
-            v-for="task in filteredTasks"
+            v-for="task in taskStore.filteredTasks"
             :key="task.id"
             :task="task"
-            @delete="deleteTask"
-            @toggle="toggleTask"
-            @update="updateTask"
+            @delete="taskStore.deleteTask"
+            @toggle="taskStore.toggleTask"
+            @update="taskStore.updateTask"
           />
         </ul>
 
         <!-- Task Statistics -->
-        <div v-if="tasks.length > 0" class="task-stats">
-          <span>{{ pendingTasksCount }} pending</span>
-          <span>{{ completedTasksCount }} completed</span>
-          <button v-if="completedTasksCount > 0" @click="clearCompleted" class="clear-completed-btn">
+        <div v-if="taskStore.tasks.length > 0" class="task-stats">
+          <span>{{ taskStore.pendingTasksCount }} pending</span>
+          <span>{{ taskStore.completedTasksCount }} completed</span>
+          <button v-if="taskStore.completedTasksCount > 0" @click="taskStore.clearCompleted" class="clear-completed-btn">
             Clear completed
           </button>
         </div>
@@ -86,45 +83,56 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import { useForm } from 'vee-validate'
 import TaskItem from '../components/TaskItem.vue'
-import { useTasks } from '../composables/useTasks'
+import ValidatedInput from '../components/ValidatedInput.vue'
+import { useTaskStore } from '../stores/taskStore'
+import { taskTitleRules, filterRules } from '../utils/validationSchemas'
 
-// Use the tasks composable
-const {
-  tasks,
-  filterText,
-  isLoading,
-  error,
-  filteredTasks,
-  completedTasksCount,
-  pendingTasksCount,
-  fetchTasks,
-  addTask,
-  deleteTask,
-  toggleTask,
-  updateTask,
-  setFilterText,
-  clearCompleted,
-  hasValidationErrors,
-  validationErrors
-} = useTasks()
+// Use the Pinia task store
+const taskStore = useTaskStore()
+
+// Form validation
+const { handleSubmit, errors, meta } = useForm({
+  validationSchema: {
+    taskTitle: taskTitleRules,
+    filterText: filterRules
+  }
+})
 
 // Local state for new task input
 const newTask = ref("")
 
-// Handle adding a new task
+// Computed form validity - simplified logic
+const isFormValid = computed(() => {
+  const trimmedValue = newTask.value.trim()
+  return trimmedValue.length >= 2 && 
+         trimmedValue.length <= 100
+})
+
+// Handle adding a new task with validation
 const handleAddTask = async () => {
-  if (!newTask.value.trim()) return
+  console.log('handleAddTask called with:', newTask.value)
+  if (!newTask.value.trim()) {
+    console.log('Task is empty, returning')
+    return
+  }
   
-  const result = await addTask(newTask.value)
+  console.log('Calling taskStore.addTask with:', newTask.value)
+  const result = await taskStore.addTask(newTask.value)
+  console.log('addTask result:', result)
+  
   if (result) {
     newTask.value = "" // Clear input only on success
+    console.log('Task added successfully, input cleared')
+  } else {
+    console.log('Failed to add task')
   }
 }
 
 // Initialize tasks on component mount
-onMounted(fetchTasks)
+onMounted(taskStore.fetchTasks)
 </script>
 
 <style scoped>
@@ -230,6 +238,7 @@ onMounted(fetchTasks)
   display: flex;
   gap: 12px;
   margin-bottom: 20px;
+  align-items: flex-start;
 }
 
 .input-wrapper {
@@ -245,6 +254,7 @@ onMounted(fetchTasks)
   font-size: 1rem;
   transition: all 0.3s ease;
   background: #f8f9fa;
+  color: #374151 !important;
 }
 
 .add-task-input:focus {
@@ -252,31 +262,21 @@ onMounted(fetchTasks)
   border-color: #667eea;
   background: white;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.add-task-input.error {
-  border-color: #dc2626;
-  background: #fef2f2;
-}
-
-.add-task-input.error:focus {
-  border-color: #dc2626;
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
-}
-
-.input-error-indicator {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #dc2626;
-  font-size: 1.2rem;
-  pointer-events: none;
+  color: #374151 !important;
 }
 
 .add-task-input:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  color: #6b7280 !important;
+}
+
+.add-task-input::placeholder {
+  color: #9ca3af !important;
+}
+
+.add-task-form {
+  width: 100%;
 }
 
 .add-task-btn {
@@ -290,6 +290,9 @@ onMounted(fetchTasks)
   cursor: pointer;
   transition: all 0.3s ease;
   white-space: nowrap;
+  height: fit-content;
+  align-self: flex-start;
+  margin-top: 0;
 }
 
 .add-task-btn:hover:not(:disabled) {
@@ -309,33 +312,64 @@ onMounted(fetchTasks)
 
 .filter-input {
   width: 100%;
-  padding: 14px 20px 14px 50px;
+  padding: 14px 20px 14px 20px;
   border: 2px solid #e1e5e9;
   border-radius: 12px;
   font-size: 1rem;
   background: #f8f9fa;
-  background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%23666" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>');
-  background-repeat: no-repeat;
-  background-position: 20px center;
-  background-size: 20px;
+  /* background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%23666" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>'); */
+  /* background-repeat: no-repeat; */
+  /* background-position: 20px center; */
+  /* background-size: 20px; */
   transition: all 0.3s ease;
   box-sizing: border-box;
+  color: #374151 !important;
 }
 
 .filter-input:focus {
   outline: none;
   border-color: #667eea;
   background: white;
-  background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%23667eea" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>');
-  background-repeat: no-repeat;
-  background-position: 20px center;
-  background-size: 20px;
+  /* background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%23667eea" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>'); */
+  /* background-repeat: no-repeat;
+  background-position: 20px center; */
+  /* background-size: 20px; */
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  color: #374151 !important;
 }
 
 .filter-input:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  color: #6b7280 !important;
+}
+
+.filter-input::placeholder {
+  color: #9ca3af !important;
+}
+
+@media (max-width: 768px) {
+  .task-manager {
+    padding: 15px;
+  }
+  
+  .main-content {
+    padding: 20px;
+  }
+  
+  .add-task-container {
+    flex-direction: column;
+  }
+  
+  .header h1 {
+    font-size: 2rem;
+  }
+  
+  .task-stats {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
 }
 
 .tasks-section {
@@ -412,29 +446,5 @@ onMounted(fetchTasks)
 
 .validation-error:last-child {
   margin-bottom: 0;
-}
-
-@media (max-width: 768px) {
-  .task-manager {
-    padding: 15px;
-  }
-  
-  .main-content {
-    padding: 20px;
-  }
-  
-  .add-task-container {
-    flex-direction: column;
-  }
-  
-  .header h1 {
-    font-size: 2rem;
-  }
-  
-  .task-stats {
-    flex-direction: column;
-    gap: 8px;
-    align-items: stretch;
-  }
 }
 </style>

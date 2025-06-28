@@ -1,4 +1,6 @@
-import { ref, computed, readonly } from "vue";
+import { defineStore } from "pinia";
+import { ref, computed, shallowRef } from "vue";
+import { useToastNotifications } from "../composables/useToast";
 
 export interface Task {
   id: number;
@@ -11,22 +13,42 @@ export interface ValidationError {
   message: string;
 }
 
-export function useTasks() {
-  const tasks = ref<Task[]>([]);
+export const useTaskStore = defineStore("tasks", () => {
+  const { showSuccess, showError, showInfo } = useToastNotifications();
+
+  // State
+  const tasks = shallowRef<Task[]>([]);
   const filterText = ref("");
   const isLoading = ref(false);
   const error = ref<string | null>(null);
   const validationErrors = ref<ValidationError[]>([]);
 
-  // Computed filtered tasks
+  // Getters (computed)
   const filteredTasks = computed(() => {
-    if (!filterText.value) return tasks.value;
-    return tasks.value.filter((task) =>
-      task.title.toLowerCase().includes(filterText.value.toLowerCase())
-    );
+    let result = tasks.value;
+
+    // Apply filter if filterText exists
+    if (filterText.value) {
+      result = result.filter((task) =>
+        task.title.toLowerCase().includes(filterText.value.toLowerCase())
+      );
+    }
+
+    // Sort by ID in descending order (latest first)
+    return result.sort((a, b) => b.id - a.id);
   });
 
-  // Validation functions
+  const completedTasksCount = computed(() => {
+    return tasks.value.filter((task) => task.completed).length;
+  });
+
+  const pendingTasksCount = computed(() => {
+    return tasks.value.filter((task) => !task.completed).length;
+  });
+
+  const hasValidationErrors = computed(() => validationErrors.value.length > 0);
+
+  // Actions
   const validateTaskTitle = (
     title: string,
     excludeId?: number
@@ -79,9 +101,6 @@ export function useTasks() {
     validationErrors.value = [];
   };
 
-  const hasValidationErrors = computed(() => validationErrors.value.length > 0);
-
-  // Fetch all tasks
   const fetchTasks = async () => {
     try {
       isLoading.value = true;
@@ -103,20 +122,32 @@ export function useTasks() {
     }
   };
 
-  // Add a new task
   const addTask = async (title: string) => {
+    console.log("Store addTask called with:", title);
+    console.log(
+      "Current tasks:",
+      tasks.value.map((t) => t.title)
+    );
     clearValidationErrors();
 
     // Validate the task title
     const errors = validateTaskTitle(title);
+    console.log("Validation errors:", errors);
     if (errors.length > 0) {
       validationErrors.value = errors;
+      console.log("Validation failed, returning null");
+      // Show toast for validation errors
+      const errorMessage = errors.map((err) => err.message).join(", ");
+      console.log("About to show error toast with message:", errorMessage);
+      showError(errorMessage);
+      console.log("Toast should have been shown");
       return null;
     }
 
     try {
       isLoading.value = true;
       error.value = null;
+      console.log("Making API request to add task");
       const response = await fetch("http://localhost:3001/tasks", {
         method: "POST",
         headers: {
@@ -128,17 +159,21 @@ export function useTasks() {
         }),
       });
 
+      console.log("API response status:", response.status);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const newTask = await response.json();
+      console.log("New task created:", newTask);
       tasks.value.push(newTask);
+      showSuccess("Task added successfully!");
       return newTask;
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to add task";
       error.value = errorMessage;
+      showError(errorMessage);
       console.error("Error adding task:", err);
       return null;
     } finally {
@@ -146,7 +181,6 @@ export function useTasks() {
     }
   };
 
-  // Delete a task
   const deleteTask = async (id: number) => {
     try {
       isLoading.value = true;
@@ -161,11 +195,13 @@ export function useTasks() {
       }
 
       tasks.value = tasks.value.filter((t) => t.id !== id);
+      showSuccess("Task deleted successfully!");
       return true;
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to delete task";
       error.value = errorMessage;
+      showError(errorMessage);
       console.error("Error deleting task:", err);
       return false;
     } finally {
@@ -173,10 +209,8 @@ export function useTasks() {
     }
   };
 
-  // Toggle task completion
   const toggleTask = async (task: Task) => {
     try {
-      isLoading.value = true;
       error.value = null;
       clearValidationErrors();
       const response = await fetch(`http://localhost:3001/tasks/${task.id}`, {
@@ -196,21 +230,20 @@ export function useTasks() {
       const updatedTask = await response.json();
       const index = tasks.value.findIndex((t) => t.id === task.id);
       if (index !== -1) {
-        tasks.value[index] = updatedTask;
+        // Use Object.assign to update only the changed properties
+        Object.assign(tasks.value[index], updatedTask);
       }
       return updatedTask;
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to toggle task";
       error.value = errorMessage;
+      showError(errorMessage);
       console.error("Error toggling task:", err);
       return null;
-    } finally {
-      isLoading.value = false;
     }
   };
 
-  // Update task title
   const updateTask = async (updateData: { id: number; title: string }) => {
     clearValidationErrors();
 
@@ -218,6 +251,9 @@ export function useTasks() {
     const errors = validateTaskTitle(updateData.title, updateData.id);
     if (errors.length > 0) {
       validationErrors.value = errors;
+      // Show toast for validation errors
+      const errorMessage = errors.map((err) => err.message).join(", ");
+      showError(errorMessage);
       return null;
     }
 
@@ -244,13 +280,16 @@ export function useTasks() {
       const updatedTask = await response.json();
       const index = tasks.value.findIndex((t) => t.id === updateData.id);
       if (index !== -1) {
-        tasks.value[index] = updatedTask;
+        // Use Object.assign to update only the changed properties
+        Object.assign(tasks.value[index], updatedTask);
       }
+      showSuccess("Task updated successfully!");
       return updatedTask;
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to update task";
       error.value = errorMessage;
+      showError(errorMessage);
       console.error("Error updating task:", err);
       return null;
     } finally {
@@ -258,32 +297,18 @@ export function useTasks() {
     }
   };
 
-  // Set filter text
   const setFilterText = (text: string) => {
     filterText.value = text;
   };
 
-  // Clear filter
   const clearFilter = () => {
     filterText.value = "";
   };
 
-  // Get task by ID
   const getTaskById = (id: number) => {
     return tasks.value.find((task) => task.id === id);
   };
 
-  // Get completed tasks count
-  const completedTasksCount = computed(() => {
-    return tasks.value.filter((task) => task.completed).length;
-  });
-
-  // Get pending tasks count
-  const pendingTasksCount = computed(() => {
-    return tasks.value.filter((task) => !task.completed).length;
-  });
-
-  // Clear all completed tasks
   const clearCompleted = async () => {
     const completedTasks = tasks.value.filter((task) => task.completed);
     const deletePromises = completedTasks.map((task) => deleteTask(task.id));
@@ -297,13 +322,13 @@ export function useTasks() {
 
   return {
     // State
-    tasks: readonly(tasks),
-    filterText: readonly(filterText),
-    isLoading: readonly(isLoading),
-    error: readonly(error),
-    validationErrors: readonly(validationErrors),
+    tasks,
+    filterText,
+    isLoading,
+    error,
+    validationErrors,
 
-    // Computed
+    // Getters
     filteredTasks,
     completedTasksCount,
     pendingTasksCount,
@@ -322,4 +347,4 @@ export function useTasks() {
     validateTaskTitle,
     clearValidationErrors,
   };
-}
+});

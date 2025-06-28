@@ -1,8 +1,14 @@
 import { createApp } from "vue";
+import { createPinia } from "pinia";
+import PrimeVue from "primevue/config";
+import ToastService from "primevue/toastservice";
+import Aura from "@primeuix/themes/aura";
 import App from "./App.vue";
-import { useStore } from "./store";
 import Home from "./views/Home.vue";
 import { createRouter, createWebHistory } from "vue-router";
+
+// PrimeVue CSS
+import "primeicons/primeicons.css";
 
 const routes = [{ path: "/", component: Home }];
 
@@ -12,6 +18,14 @@ const router = createRouter({
 });
 
 const app = createApp(App);
-// const store = useStore(); // Not needed here
+const pinia = createPinia();
+
+app.use(pinia);
 app.use(router);
+app.use(PrimeVue, {
+  theme: {
+    preset: Aura,
+  },
+});
+app.use(ToastService);
 app.mount("#app");
