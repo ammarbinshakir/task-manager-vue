@@ -84,54 +84,28 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useForm } from 'vee-validate'
 import TaskItem from '../components/TaskItem.vue'
-import ValidatedInput from '../components/ValidatedInput.vue'
 import { useTaskStore } from '../stores/taskStore'
-import { taskTitleRules, filterRules } from '../utils/validationSchemas'
 
 // Use the Pinia task store
 const taskStore = useTaskStore()
 
-// Form validation
-const { handleSubmit, errors, meta } = useForm({
-  validationSchema: {
-    taskTitle: taskTitleRules,
-    filterText: filterRules
-  }
-})
-
 // Local state for new task input
 const newTask = ref("")
 
-// Computed form validity - simplified logic
+// Computed form validity - simple length check
 const isFormValid = computed(() => {
   const trimmedValue = newTask.value.trim()
-  return trimmedValue.length >= 2 && 
-         trimmedValue.length <= 100
+  return trimmedValue.length >= 2 && trimmedValue.length <= 100
 })
 
 // Handle adding a new task with validation
 const handleAddTask = async () => {
-  console.log('handleAddTask called with:', newTask.value)
-  if (!newTask.value.trim()) {
-    console.log('Task is empty, returning')
-    return
-  }
-  
-  console.log('Calling taskStore.addTask with:', newTask.value)
+  if (!newTask.value.trim()) return
   const result = await taskStore.addTask(newTask.value)
-  console.log('addTask result:', result)
-  
-  if (result) {
-    newTask.value = "" // Clear input only on success
-    console.log('Task added successfully, input cleared')
-  } else {
-    console.log('Failed to add task')
-  }
+  if (result) newTask.value = ""
 }
 
-// Initialize tasks on component mount
 onMounted(taskStore.fetchTasks)
 </script>
 

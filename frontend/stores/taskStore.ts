@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, computed, shallowRef } from "vue";
+import { ref, computed } from "vue";
 import { useToastNotifications } from "../composables/useToast";
 
 export interface Task {
@@ -17,7 +17,7 @@ export const useTaskStore = defineStore("tasks", () => {
   const { showSuccess, showError, showInfo } = useToastNotifications();
 
   // State
-  const tasks = shallowRef<Task[]>([]);
+  const tasks = ref<Task[]>([]);
   const filterText = ref("");
   const isLoading = ref(false);
   const error = ref<string | null>(null);
@@ -230,8 +230,8 @@ export const useTaskStore = defineStore("tasks", () => {
       const updatedTask = await response.json();
       const index = tasks.value.findIndex((t) => t.id === task.id);
       if (index !== -1) {
-        // Use Object.assign to update only the changed properties
-        Object.assign(tasks.value[index], updatedTask);
+        // Replace the entire task object for better reactivity
+        tasks.value[index] = updatedTask;
       }
       return updatedTask;
     } catch (err) {
@@ -280,8 +280,8 @@ export const useTaskStore = defineStore("tasks", () => {
       const updatedTask = await response.json();
       const index = tasks.value.findIndex((t) => t.id === updateData.id);
       if (index !== -1) {
-        // Use Object.assign to update only the changed properties
-        Object.assign(tasks.value[index], updatedTask);
+        // Replace the entire task object for better reactivity
+        tasks.value[index] = updatedTask;
       }
       showSuccess("Task updated successfully!");
       return updatedTask;
