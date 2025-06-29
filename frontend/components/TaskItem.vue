@@ -26,17 +26,14 @@
       <!-- Edit mode -->
       <div v-else class="edit-mode">
         <div class="edit-input-wrapper">
-          <ValidatedInput
+          <input
             v-model="editTitle"
-            name="editTaskTitle"
-            :rules="editTaskTitleRules"
             placeholder="Edit task title..."
             @keyup.enter="saveEdit"
             @keyup.esc="cancelEdit"
             @blur="saveEdit"
             ref="editInput"
             class="edit-input"
-            :showSuccessMessage="false"
           />
         </div>
         <div class="edit-buttons">
@@ -58,8 +55,6 @@
 
 <script setup lang="ts">
 import { ref, nextTick, computed } from 'vue'
-import ValidatedInput from './ValidatedInput.vue'
-import { taskTitleRules } from '../utils/validationSchemas'
 
 const props = defineProps<{
   task: { id: number; title: string; completed: boolean }
@@ -75,23 +70,6 @@ const isToggling = ref(false)
 // Memoize the task to prevent unnecessary re-renders
 const task = computed(() => props.task)
 
-// Validation rules for editing (excluding current task from duplicate check)
-const editTaskTitleRules = {
-  ...taskTitleRules,
-  unique: async (value: string) => {
-    if (!value) return true
-    // Import the store here to avoid circular dependency
-    const { useTaskStore } = await import('../stores/taskStore')
-    const taskStore = useTaskStore()
-    const normalizedTitle = value.trim().toLowerCase()
-    const isDuplicate = taskStore.tasks.some(taskItem => 
-      taskItem.title.toLowerCase() === normalizedTitle && 
-      taskItem.id !== task.value.id
-    )
-    return !isDuplicate || 'A task with this title already exists'
-  }
-}
-
 const startEdit = () => {
   editTitle.value = task.value.title
   isEditing.value = true
@@ -103,11 +81,9 @@ const startEdit = () => {
 
 const saveEdit = async () => {
   if (editTitle.value.trim() && editTitle.value !== task.value.title) {
-    // Import the store here to avoid circular dependency
     const { useTaskStore } = await import('../stores/taskStore')
     const taskStore = useTaskStore()
     const result = await taskStore.updateTask({ id: task.value.id, title: editTitle.value.trim() })
-    // If the update fails due to validation, don't exit edit mode
     if (result === null) {
       return
     }
@@ -122,16 +98,11 @@ const cancelEdit = () => {
 
 const handleToggle = async () => {
   if (isToggling.value) return
-  
   isToggling.value = true
   try {
-    // Import the store here to avoid circular dependency
-    const { useTaskStore } = await import('../stores/taskStore')
-    const taskStore = useTaskStore()
-    const result = await taskStore.toggleTask(task.value)
+    const result = await emit('toggle', task.value)
     if (result === null) {
       // If toggle failed, revert the checkbox state
-      // The checkbox will revert automatically on next render
     }
   } catch (error) {
     console.error('Error toggling task:', error)
