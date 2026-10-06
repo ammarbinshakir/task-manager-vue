@@ -5,8 +5,12 @@
     "frontend",
     "backend"
   ],
+  "dependencies": {
+    "dotenv": "^8.2.0",
+    "node-fetch": "^3.3.2"
+  },
   "scripts": {
-    "dev:backend": "node backend/index.js",
-    "dev:frontend": "cd frontend && npm run dev"
+    "dev:backend": "node init && node backend/index.js",
+    "dev:frontend": "node init && cd frontend && npm run dev"
   }
 }
